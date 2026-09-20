@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard - Assignment Reminder</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <h2 id="welcomeMsg">Dashboard</h2>
+  <div>
+    <button class="btn-secondary btn-small" id="logoutBtn">Logout</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="stats" id="statsBox"></div>
+
+  <div class="toolbar">
+    <select id="statusFilter">
+      <option value="ALL">All</option>
+      <option value="PENDING">Pending</option>
+      <option value="COMPLETED">Completed</option>
+      <option value="OVERDUE">Overdue</option>
+    </select>
+    <select id="subjectFilter">
+      <option value="ALL">All subjects</option>
+    </select>
+    <select id="priorityFilter">
+      <option value="ALL">All priorities</option>
+      <option value="HIGH">High</option>
+      <option value="MEDIUM">Medium</option>
+      <option value="LOW">Low</option>
+    </select>
+  </div>
+
+  <div id="reminderBox"></div>
+
+  <div class="card-list" id="assignmentList"></div>
+
+</div>
+
+<a href="add-assignment.html" class="btn fab">+ Add Assignment</a>
+
+<script src="api.js"></script>
+<script>
+requireAuth();
+
+let allAssignments = [];
+
+document.getElementById('welcomeMsg').textContent = `Welcome, ${getStudent()?.name || 'Student'} 👋`;
+document.getElementById('logoutBtn').addEventListener('click', logout);
+
+async function loadAssignments() {
+  try {
+    allAssignments = await apiRequest('/assignments');
+    populateSubjectFilter();
+    renderStats();
+    renderReminders();
+    renderList();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function populateSubjectFilter() {
+  const select = document.getElementById('subjectFilter');
+  const current = select.value;
+  const subjects = [...new Set(allAssignments.map(a => a.subject))];
+  select.innerHTML = '<option value="ALL">All subjects</option>' +
+    subjects.map(s => `<option value="${s}">${s}</option>`).join('');
+  select.value = current || 'ALL';
+}
+
+function renderStats() {
+  const total = allAssignments.length;
+  const completed = allAssignments.filter(a => a.status === 'COMPLETED').length;
+  const overdue = allAssignments.filter(a => a.is_overdue).length;
+  const pending = total - completed;
+
+  document.getElementById('statsBox').innerHTML = `
+    <div class="stat-box"><div class="num">${total}</div><div class="label">Total</div></div>
+    <div class="stat-box"><div class="num">${pending}</div><div class="label">Pending</div></div>
+    <div class="stat-box"><div class="num">${completed}</div><div class="label">Completed</div></div>
+    <div class="stat-box"><div class="num">${overdue}</div><div class="label">Overdue</div></div>
+  `;
+}
+
+function renderReminders() {
+  const upcoming = allAssignments.filter(a =>
+    a.status !== 'COMPLETED' && a.days_remaining >= 0 && a.days_remaining <= 3
+  );
+  if (upcoming.length === 0) {
+    document.getElementById('reminderBox').innerHTML = '';
+    return;
+  }
+  const items = upcoming.map(a =>
+    `<li>${a.title} — due in ${a.days_remaining === 0 ? 'today' : a.days_remaining + ' day(s)'}</li>`
+  ).join('');
+  document.getElementById('reminderBox').innerHTML = `
+    <div class="error-msg" style="display:block; background:#fef3c7; color:#92400e;">
+      🔔 <strong>Reminders:</strong>
+      <ul style="margin:6px 0 0 18px;">${items}</ul>
+    </div>`;
+}
+
+function renderList() {
+  const status = document.getElementById('statusFilter').value;
+  const subject = document.getElementById('subjectFilter').value;
+  const priority = document.getElementById('priorityFilter').value;
+
+  let filtered = allAssignments.filter(a => {
+    if (status === 'OVERDUE' && !a.is_overdue) return false;
+    if (status !== 'ALL' && status !== 'OVERDUE' && a.status !== status) return false;
+    if (subject !== 'ALL' && a.subject !== subject) return false;
+    if (priority !== 'ALL' && a.priority !== priority) return false;
+    return true;
+  });
+
+  const list = document.getElementById('assignmentList');
+  if (filtered.length === 0) {
+    list.innerHTML = '<div class="empty-state">No assignments match this filter.</div>';
+    return;
+  }
+
+  list.innerHTML = filtered.map(a => {
+    let cardClass = '';
+    let statusBadge = `<span class="badge status-pending">${a.status}</span>`;
+    if (a.status === 'COMPLETED') {
+      cardClass = 'completed';
+      statusBadge = `<span class="badge status-completed">COMPLETED</span>`;
+    } else if (a.is_overdue) {
+      cardClass = 'overdue';
+      statusBadge = `<span class="badge status-overdue">OVERDUE</span>`;
+    } else if (a.days_remaining <= 3) {
+      cardClass = 'due-soon';
+    }
+
+    const dueLabel = new Date(a.due_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+    return `
+      <div class="assignment-card ${cardClass}">
+        <div>
+          <div class="assignment-title">${a.title} <span class="badge ${a.priority.toLowerCase()}">${a.priority}</span> ${statusBadge}</div>
+          <div class="assignment-meta">${a.subject} • Due: ${dueLabel} ${a.status !== 'COMPLETED' ? (a.is_overdue ? `(overdue)` : `(${a.days_remaining} day(s) left)`) : ''}</div>
+        </div>
+        <div>
+          ${a.status !== 'COMPLETED' ? `<button class="btn-success btn-small" onclick="markComplete(${a.id})">Complete</button>` : ''}
+          <button class="btn-secondary btn-small" onclick="editAssignment(${a.id})">Edit</button>
+          <button class="btn-danger btn-small" onclick="deleteAssignment(${a.id})">Delete</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function markComplete(id) {
+  try {
+    await apiRequest(`/assignments/${id}/complete`, { method: 'PUT' });
+    loadAssignments();
+  } catch (err) {
+    alert(err.error || 'Could not update assignment.');
+  }
+}
+
+async function deleteAssignment(id) {
+  if (!confirm('Delete this assignment?')) return;
+  try {
+    await apiRequest(`/assignments/${id}`, { method: 'DELETE' });
+    loadAssignments();
+  } catch (err) {
+    alert(err.error || 'Could not delete assignment.');
+  }
+}
+
+function editAssignment(id) {
+  window.location.href = `add-assignment.html?id=${id}`;
+}
+
+document.getElementById('statusFilter').addEventListener('change', renderList);
+document.getElementById('subjectFilter').addEventListener('change', renderList);
+document.getElementById('priorityFilter').addEventListener('change', renderList);
+
+loadAssignments();
+</script>
+</body>
+</html>

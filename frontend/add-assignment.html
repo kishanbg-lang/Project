@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Add Assignment</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <h2 id="pageTitle">Add Assignment</h2>
+  <a href="dashboard.html" class="btn btn-secondary btn-small">Back</a>
+</div>
+
+<div class="container" style="max-width: 480px;">
+  <div class="auth-card" style="max-width: none;">
+    <div class="error-msg" id="errorMsg"></div>
+    <form id="assignmentForm">
+      <div class="field">
+        <label>Subject</label>
+        <input type="text" id="subject" required placeholder="e.g. Java">
+      </div>
+      <div class="field">
+        <label>Assignment Title</label>
+        <input type="text" id="title" required placeholder="e.g. Lab Assignment 3">
+      </div>
+      <div class="field">
+        <label>Description</label>
+        <textarea id="description" rows="3"></textarea>
+      </div>
+      <div class="field">
+        <label>Due Date</label>
+        <input type="date" id="due_date" required>
+      </div>
+      <div class="field">
+        <label>Priority</label>
+        <select id="priority">
+          <option value="HIGH">High</option>
+          <option value="MEDIUM" selected>Medium</option>
+          <option value="LOW">Low</option>
+        </select>
+      </div>
+      <button type="submit" class="full" id="submitBtn">SAVE</button>
+    </form>
+  </div>
+</div>
+
+<script src="api.js"></script>
+<script>
+requireAuth();
+
+const params = new URLSearchParams(window.location.search);
+const editId = params.get('id');
+let existingStatus = 'PENDING';
+
+if (editId) {
+  document.getElementById('pageTitle').textContent = 'Edit Assignment';
+  document.getElementById('submitBtn').textContent = 'UPDATE';
+  loadExisting();
+}
+
+async function loadExisting() {
+  try {
+    const all = await apiRequest('/assignments');
+    const a = all.find(x => x.id == editId);
+    if (!a) return;
+    document.getElementById('subject').value = a.subject;
+    document.getElementById('title').value = a.title;
+    document.getElementById('description').value = a.description || '';
+    document.getElementById('due_date').value = a.due_date.split('T')[0];
+    document.getElementById('priority').value = a.priority;
+    existingStatus = a.status;
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+document.getElementById('assignmentForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorMsg = document.getElementById('errorMsg');
+  errorMsg.style.display = 'none';
+
+  const payload = {
+    subject: document.getElementById('subject').value.trim(),
+    title: document.getElementById('title').value.trim(),
+    description: document.getElementById('description').value.trim(),
+    due_date: document.getElementById('due_date').value,
+    priority: document.getElementById('priority').value
+  };
+
+  try {
+    if (editId) {
+      payload.status = existingStatus; // preserve completed/pending state on edit
+      await apiRequest(`/assignments/${editId}`, { method: 'PUT', body: JSON.stringify(payload) });
+    } else {
+      await apiRequest('/assignments', { method: 'POST', body: JSON.stringify(payload) });
+    }
+    window.location.href = 'dashboard.html';
+  } catch (err) {
+    errorMsg.textContent = err.error || 'Could not save assignment.';
+    errorMsg.style.display = 'block';
+  }
+});
+</script>
+</body>
+</html>
