@@ -1,6 +1,6 @@
 // Shared helper used by every page to talk to the backend.
 
-const API_BASE = 'https://student-assignment-backend-klwh.onrender.com';
+const API_BASE = 'https://student-assignment-backend-klwh.onrender.com/api';
 function getToken() {
   return localStorage.getItem('token');
 }
